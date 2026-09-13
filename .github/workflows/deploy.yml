@@ -1,4 +1,4 @@
-name: Deploy DistilBERT to Render
+name: Deploy DistilBERT to Render v1
 
 on:
   push:
