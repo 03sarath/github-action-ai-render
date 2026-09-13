@@ -1,91 +1,144 @@
-name: Deploy DistilBERT to Hugging Face Spaces
+name: Deploy DistilBERT to Render
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (leave blank to use the default below)"
+        required: false
+        default: ""
 
 env:
   DOCKER_REPO: 03sarath/distilbert-sentiment
+  # Change this tag and push to main -> that version gets tested and deployed
+  IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+  RENDER_SERVICE_NAME: distilbert-sentiment
+  RENDER_REGION: oregon
+  RENDER_PLAN: free
+  APP_PORT: "7860"
 
 jobs:
 
-  # ─────────────────────────────────────────────
-  # JOB 1: Pull the real Docker image, run it,
-  #         send a real prediction, confirm it works
-  # ─────────────────────────────────────────────
+  # -------------------------------------------------
+  # JOB 1: CI - pull the real image, run it,
+  #        send a real prediction, confirm it works.
+  #        Nothing reaches Render unless this passes.
+  # -------------------------------------------------
   smoke-test:
     name: Model Smoke Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Start container
-        run: |
-          IMAGE=$(grep '^FROM' hf-space/Dockerfile | awk '{print $2}')
-          docker run -d --name smoke-test -p 7860:7860 $IMAGE
+        run: docker run -d --name smoke-test -p 7860:7860 $DOCKER_REPO:$IMAGE_TAG
 
       - name: Wait for model and run smoke test
         run: |
-          curl --retry 20 --retry-delay 15 --retry-connrefused --retry-all-errors -sf \
-            http://localhost:7860/health
-          curl --fail -X POST http://localhost:7860/predict \
-            -H "Content-Type: application/json" \
-            -d '{"text": "The weather today is absolutely wonderful!"}'
+          curl --retry 20 --retry-delay 15 --retry-connrefused --retry-all-errors -sf http://localhost:7860/health
+          curl --fail -X POST http://localhost:7860/predict -H "Content-Type: application/json" -d '{"text": "The weather today is absolutely wonderful!"}'
 
       - name: Stop container
         if: always()
         run: docker stop smoke-test && docker rm smoke-test
 
-  # ─────────────────────────────────────────────
-  # JOB 2: Deploy to Hugging Face Spaces
-  #         Runs only after smoke-test passes
-  # ─────────────────────────────────────────────
-  deploy:
-    name: Deploy to Hugging Face Spaces
+  # -------------------------------------------------
+  # JOB 2: PROVISIONING - create the Render service
+  #        only if it does not exist yet.
+  #        Runs every push, but does real work ONCE.
+  #        This is infrastructure, not delivery.
+  # -------------------------------------------------
+  provision:
+    name: Provision Render Service
     runs-on: ubuntu-latest
     needs: smoke-test
+    outputs:
+      service_id: ${{ steps.ensure.outputs.service_id }}
+      service_url: ${{ steps.ensure.outputs.service_url }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Upload to Hugging Face Space
+      - name: Create service if it does not exist
+        id: ensure
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: ${{ secrets.HF_USERNAME }}
-          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          pip install huggingface_hub -q
-          python -c "
-          from huggingface_hub import HfApi
-          api = HfApi()
-          api.upload_folder(
-              folder_path='hf-space/',
-              repo_id='$HF_USERNAME/$HF_SPACE_NAME',
-              repo_type='space',
-              token='$HF_TOKEN'
-          )
-          print('Deployed successfully to HF Space')
-          "
+          API=https://api.render.com/v1
+          AUTH="Authorization: Bearer $RENDER_API_KEY"
 
-  # ─────────────────────────────────────────────
-  # JOB 3: Confirm the deployment is live
-  # ─────────────────────────────────────────────
+          # Does a service with this name already exist?
+          EXISTING=$(curl -sf -H "$AUTH" "$API/services?name=$RENDER_SERVICE_NAME&type=web_service&limit=1")
+          SERVICE_ID=$(echo "$EXISTING" | jq -r '.[0].service.id // empty')
+
+          if [ -n "$SERVICE_ID" ]; then
+            echo "Service already exists: $SERVICE_ID (nothing to provision)"
+            SERVICE_URL=$(echo "$EXISTING" | jq -r '.[0].service.serviceDetails.url')
+          else
+            echo "No service found. Creating it..."
+            OWNER_ID=$(curl -sf -H "$AUTH" "$API/owners?limit=1" | jq -r '.[0].owner.id')
+
+            cat > body.json <<JSON
+          {
+            "type": "web_service",
+            "name": "$RENDER_SERVICE_NAME",
+            "ownerId": "$OWNER_ID",
+            "image": {
+              "ownerId": "$OWNER_ID",
+              "imagePath": "docker.io/$DOCKER_REPO:$IMAGE_TAG"
+            },
+            "serviceDetails": {
+              "runtime": "image",
+              "plan": "$RENDER_PLAN",
+              "region": "$RENDER_REGION",
+              "healthCheckPath": "/health",
+              "envSpecificDetails": {}
+            },
+            "envVars": [
+              { "key": "PORT", "value": "$APP_PORT" }
+            ]
+          }
+          JSON
+
+            CREATED=$(curl -sf -X POST "$API/services" -H "$AUTH" -H "Content-Type: application/json" -d @body.json)
+            SERVICE_ID=$(echo "$CREATED" | jq -r '.service.id')
+            SERVICE_URL=$(echo "$CREATED" | jq -r '.service.serviceDetails.url')
+            echo "Created service: $SERVICE_ID"
+          fi
+
+          echo "service_id=$SERVICE_ID"   >> $GITHUB_OUTPUT
+          echo "service_url=$SERVICE_URL" >> $GITHUB_OUTPUT
+
+  # -------------------------------------------------
+  # JOB 3: CD - tell Render to run THIS exact tag.
+  #        This is the part that repeats on every
+  #        push. This is the actual delivery step.
+  # -------------------------------------------------
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: provision
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ needs.provision.outputs.service_id }}
+        run: |
+          curl --fail -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" -d "{\"imageUrl\": \"docker.io/$DOCKER_REPO:$IMAGE_TAG\"}"
+          echo "Deploy triggered: docker.io/$DOCKER_REPO:$IMAGE_TAG"
+
+  # -------------------------------------------------
+  # JOB 4: Confirm the new version is actually live
+  # -------------------------------------------------
   health-check:
     name: Post-Deploy Health Check
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [provision, deploy]
     steps:
-      - name: Wait for Space to rebuild
-        run: sleep 90
+      - name: Wait for Render to pull the image
+        run: sleep 60
 
-      - name: Call health endpoint and confirm version
+      - name: Call health endpoint
         env:
-          HF_USERNAME: ${{ secrets.HF_USERNAME }}
-          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+          SERVICE_URL: ${{ needs.provision.outputs.service_url }}
         run: |
-          curl --fail \
-               --retry 5 \
-               --retry-delay 30 \
-               --retry-connrefused \
-               https://$HF_USERNAME-$HF_SPACE_NAME.hf.space/health
+          curl --fail --retry 10 --retry-delay 30 --retry-connrefused --retry-all-errors "$SERVICE_URL/health"
+          echo "Live at $SERVICE_URL"
