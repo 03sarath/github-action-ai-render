@@ -78,9 +78,21 @@ jobs:
           SERVICE_ID=$(echo "$EXISTING" | jq -r '.[0].service.id // empty')
 
           if [ -n "$SERVICE_ID" ]; then
-            echo "Service already exists: $SERVICE_ID (nothing to provision)"
+            echo "Service already exists: $SERVICE_ID"
             SERVICE_URL=$(echo "$EXISTING" | jq -r '.[0].service.serviceDetails.url')
             CREATED=false
+
+            # Desired state: the plan in this file wins. If someone changed the
+            # instance type in the dashboard (or it was created on free), fix it.
+            CURRENT_PLAN=$(echo "$EXISTING" | jq -r '.[0].service.serviceDetails.plan')
+            if [ "$CURRENT_PLAN" != "$RENDER_PLAN" ]; then
+              echo "Plan drift: service is on '$CURRENT_PLAN', workflow wants '$RENDER_PLAN'. Updating..."
+              PATCH_BODY=$(jq -n --arg plan "$RENDER_PLAN" '{serviceDetails: {plan: $plan}}')
+              curl -sf -X PATCH "$API/services/$SERVICE_ID" -H "$AUTH" -H "Content-Type: application/json" -d "$PATCH_BODY" > /dev/null
+              echo "Plan updated to '$RENDER_PLAN' (takes effect on the deploy below)."
+            else
+              echo "Plan is already '$RENDER_PLAN' - nothing to provision."
+            fi
           else
             echo "No service found. Creating it..."
             OWNER_ID=$(curl -sf -H "$AUTH" "$API/owners?limit=1" | jq -r '.[0].owner.id')
