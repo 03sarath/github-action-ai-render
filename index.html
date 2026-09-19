@@ -242,8 +242,7 @@
         document.getElementById("resultLabel").textContent =
           `${emoji}  ${data.label}`;
         document.getElementById("resultMeta").innerHTML =
-          `Confidence: <span>${confidence}%</span>` +
-          (data.model_version ? `&nbsp;&nbsp;|&nbsp;&nbsp;Model version: <span>${data.model_version}</span>` : "");
+          `Confidence: <span>${confidence}%</span>`;
 
       } catch (err) {
         // fetch() throws a bare TypeError for network/CORS failures

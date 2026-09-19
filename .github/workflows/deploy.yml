@@ -14,7 +14,7 @@ on:
 env:
   DOCKER_REPO: 03sarath/distilbert-sentiment
   # Change this tag and push to main -> that version gets tested and deployed
-  # 'slim' = ONNX int8 build from github-action-ai/slim-image (fits in free 512MB).
+  # 'slim' = ONNX int8 build from slim-image/ in this repo (fits in free 512MB).
   # 'latest'/'v1' are the ~3GB PyTorch builds that get OOM-killed on free.
   IMAGE_TAG: ${{ inputs.image_tag || 'slim' }}
   RENDER_SERVICE_NAME: distilbert-sentiment
@@ -121,7 +121,7 @@ jobs:
             echo "No service found. Creating it..."
             OWNER_ID=$(render GET "/owners?limit=1" | jq -r '.[0].owner.id')
 
-            jq -n \
+            CREATE_BODY=$(jq -n \
               --arg name    "$RENDER_SERVICE_NAME" \
               --arg owner   "$OWNER_ID" \
               --arg image   "docker.io/$DOCKER_REPO:$IMAGE_TAG" \
@@ -141,9 +141,9 @@ jobs:
                    envSpecificDetails: {}
                  },
                  envVars: [ { key: "PORT", value: $port } ]
-               }' > body.json
+               }')
 
-            CREATED_JSON=$(render POST "/services" "$(cat body.json)")
+            CREATED_JSON=$(render POST "/services" "$CREATE_BODY")
             SERVICE_ID=$(echo "$CREATED_JSON" | jq -r '.service.id')
             SERVICE_URL=$(echo "$CREATED_JSON" | jq -r '.service.serviceDetails.url')
             CREATED=true
