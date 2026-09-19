@@ -7,10 +7,10 @@ on:
 
 env:
   IMAGE: docker.io/03sarath/distilbert-sentiment:slim-v2
-  APP_URL: https://distilbert-sentiment-slim-v1.onrender.com             
+  APP_URL: https://distilbert-sentiment-psitron.onrender.com            
   
   # Render API endpoint for the deploys of our service (srv-... = service ID)
-  DEPLOYS_API: https://api.render.com/v1/services/srv-dan6j2qjnfac73fi8o10/deploys
+  DEPLOYS_API: https://api.render.com/v1/services/srv-dan9vpqjnfac73ftrnug/deploys
 
 jobs:
   # JOB 1 (CI): run the image and make a real prediction
