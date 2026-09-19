@@ -1,7 +1,7 @@
-"""Sentiment API backed by a quantized ONNX DistilBERT.
+"""Sentiment web app backed by a quantized ONNX DistilBERT.
 
-Same contract as the PyTorch image it replaces:
-    GET  /health   -> {"status": "ok"}
+    GET  /         -> the web page (index.html)
+    GET  /health   -> {"status": "ok", "version": "v1"}
     POST /predict  -> {"label": "POSITIVE", "score": 0.99}
 """
 import os
@@ -9,25 +9,17 @@ import os
 import numpy as np
 import onnxruntime as ort
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from tokenizers import Tokenizer
 
 MODEL_DIR = os.environ.get("MODEL_DIR", "/model")
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 LABELS = ("NEGATIVE", "POSITIVE")
 MAX_LEN = 256
 
 app = FastAPI(title="DistilBERT Sentiment (ONNX int8)")
-
-# Let a browser page (e.g. index.html opened locally or hosted elsewhere) call
-# the API. Public demo with no cookies/auth, so any origin is fine; set
-# CORS_ORIGINS="https://a.com,https://b.com" to lock it down.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
-)
 
 # Single-threaded session keeps RSS small - the free instance has 0.1 CPU,
 # extra threads buy nothing and cost memory.
@@ -56,9 +48,15 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return exp / exp.sum()
 
 
+# The page and the API share one origin, so no CORS setup is needed.
+@app.get("/", include_in_schema=False)
+def home() -> FileResponse:
+    return FileResponse(PAGE)
+
+
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "version": APP_VERSION}
 
 
 @app.post("/predict")

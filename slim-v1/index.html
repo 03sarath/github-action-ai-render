@@ -51,14 +51,6 @@
       margin-bottom: 6px;
     }
 
-    .hint {
-      font-size: 12px;
-      color: #aaa;
-      margin-top: -2px;
-      margin-bottom: 10px;
-    }
-
-    input[type="text"],
     textarea {
       width: 100%;
       padding: 10px 14px;
@@ -71,7 +63,6 @@
       font-family: inherit;
     }
 
-    input[type="text"]:focus,
     textarea:focus {
       border-color: #6c63ff;
     }
@@ -82,8 +73,11 @@
       margin-bottom: 20px;
     }
 
-    .url-row {
-      margin-bottom: 24px;
+    .version {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: #aaa;
     }
 
     button {
@@ -162,21 +156,7 @@
 <body>
   <div class="card">
     <h1>DistilBERT Sentiment Tester</h1>
-    <p class="subtitle">Test your model deployed on Render</p>
-
-    <div class="url-row">
-      <label for="apiUrl">Render Service URL</label>
-      <p class="hint">
-        Format: &nbsp;<code>https://YOUR_SERVICE_NAME.onrender.com</code>
-        &nbsp;— do <strong>not</strong> include <code>/predict</code> here
-      </p>
-      <input
-        type="text"
-        id="apiUrl"
-        placeholder="https://distilbert-sentiment.onrender.com"
-        value="https://distilbert-sentiment.onrender.com"
-      />
-    </div>
+    <p class="subtitle">DistilBERT (ONNX int8) running on Render</p>
 
     <label for="inputText">Text to Analyse</label>
     <textarea
@@ -194,11 +174,12 @@
       <div class="result-label" id="resultLabel"></div>
       <div class="result-meta" id="resultMeta"></div>
     </div>
+
+    <p class="version" id="version"></p>
   </div>
 
   <script>
     async function predict() {
-      const urlInput  = document.getElementById("apiUrl").value.trim().replace(/\/$/, "");
       const textInput = document.getElementById("inputText").value.trim();
       const btn       = document.getElementById("submitBtn");
       const spinner   = document.getElementById("spinner");
@@ -208,10 +189,6 @@
       resultBox.style.display = "none";
       resultBox.className = "result";
 
-      if (!urlInput) {
-        showError("Please enter your Render service URL.");
-        return;
-      }
       if (!textInput) {
         showError("Please enter some text to analyse.");
         return;
@@ -221,7 +198,8 @@
       spinner.style.display = "block";
 
       try {
-        const response = await fetch(`${urlInput}/predict`, {
+        // Same server that served this page, so a relative URL is enough
+        const response = await fetch("/predict", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: textInput }),
@@ -245,11 +223,11 @@
           `Confidence: <span>${confidence}%</span>`;
 
       } catch (err) {
-        // fetch() throws a bare TypeError for network/CORS failures
+        // fetch() throws a bare TypeError when the server can't be reached
         const message = err instanceof TypeError
-          ? "Could not reach the API. Check the URL, wait a minute if the service was asleep, and try again."
+          ? "Could not reach the server. Wait a minute if the service was asleep, then try again."
           : err.message;
-        showError(message || "Request failed. Check the URL and try again.");
+        showError(message || "Request failed. Please try again.");
       } finally {
         btn.disabled        = false;
         spinner.style.display = "none";
@@ -269,6 +247,12 @@
     document.getElementById("inputText").addEventListener("keydown", function (e) {
       if (e.key === "Enter" && e.ctrlKey) predict();
     });
+
+    // Show which version is deployed (handy when CI/CD rolls out a new one)
+    fetch("/health")
+      .then((r) => r.json())
+      .then((h) => { document.getElementById("version").textContent = `App version: ${h.version}`; })
+      .catch(() => {});
   </script>
 </body>
 </html>

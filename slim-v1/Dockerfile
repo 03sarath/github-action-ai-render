@@ -1,3 +1,7 @@
+# Build:  docker build -t <dockerhub-user>/distilbert-sentiment:slim-v1 .
+# Run:    docker run -p 7860:7860 <dockerhub-user>/distilbert-sentiment:slim-v1
+#         then open http://localhost:7860
+
 # ---------- Stage 1: export + quantize (heavy, thrown away) ----------
 # PyTorch and optimum are only needed to PRODUCE the ONNX file. None of
 # this reaches the final image, which is why it can be huge here.
@@ -34,19 +38,21 @@ RUN cp /tmp/onnx/tokenizer.json /model/tokenizer.json && \
 FROM python:3.11-slim
 
 # onnxruntime + tokenizers only. No torch, no transformers.
+# Plain uvicorn (no [standard] extras) keeps the image lighter.
 RUN pip install --no-cache-dir \
       onnxruntime==1.20.1 \
       tokenizers==0.20.3 \
       fastapi==0.115.6 \
-      "uvicorn[standard]==0.34.0" \
+      uvicorn==0.34.0 \
       numpy==2.1.3
 
 COPY --from=builder /model /model
-COPY app.py /app/app.py
+COPY app.py index.html /app/
 
 WORKDIR /app
 
 ENV MODEL_DIR=/model \
+    APP_VERSION=v1 \
     PORT=7860 \
     OMP_NUM_THREADS=1
 

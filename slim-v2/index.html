@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentiment Studio</title>
+  <style>
+    :root {
+      --bg: #0f1020;
+      --panel: #181a33;
+      --border: #2a2d52;
+      --text: #e8e9f5;
+      --muted: #8b8fb8;
+      --accent: #22d3ee;
+      --accent-2: #a78bfa;
+      --positive: #34d399;
+      --negative: #fb7185;
+      --warning: #fbbf24;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at 20% 0%, #25204d 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .panel {
+      width: 100%;
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--bg);
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: 30px;
+      font-weight: 800;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+
+    .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+
+    .chip {
+      font: inherit;
+      font-size: 12px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      font: inherit;
+      font-size: 15px;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+
+    .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+
+    .analyse {
+      flex: 1;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--bg);
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .analyse:hover { opacity: 0.9; }
+    .analyse:active { transform: scale(0.99); }
+    .analyse:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .shortcut { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    .status { margin-top: 16px; font-size: 13px; color: var(--muted); display: none; }
+
+    .result {
+      margin-top: 24px;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      display: none;
+    }
+
+    .result-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .result-label { font-size: 22px; font-weight: 800; }
+    .result-score { font-size: 14px; color: var(--muted); }
+
+    .meter {
+      height: 10px;
+      margin-top: 14px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .meter-fill { height: 100%; width: 0; border-radius: 999px; transition: width 0.5s ease; }
+
+    .positive .result-label { color: var(--positive); }
+    .positive .meter-fill   { background: var(--positive); }
+    .negative .result-label { color: var(--negative); }
+    .negative .meter-fill   { background: var(--negative); }
+    .error .result-label    { color: var(--warning); }
+    .error .meter           { display: none; }
+
+    .footer { margin-top: 28px; font-size: 12px; color: var(--muted); text-align: center; }
+
+    @media (max-width: 480px) {
+      .panel { padding: 24px 20px; }
+      .shortcut { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <span class="badge">New UI</span>
+    <h1>Sentiment Studio</h1>
+    <p class="subtitle">Type or pick a sentence and let DistilBERT decide how it feels.</p>
+
+    <div class="examples">
+      <button class="chip" type="button">This course is fantastic!</button>
+      <button class="chip" type="button">The delivery was late and the box was broken.</button>
+      <button class="chip" type="button">GitHub Actions made deploying so easy.</button>
+    </div>
+
+    <textarea id="inputText" placeholder="Write something here..."></textarea>
+
+    <div class="actions">
+      <button class="analyse" id="submitBtn" type="button">Analyse</button>
+      <span class="shortcut">Ctrl + Enter</span>
+    </div>
+
+    <p class="status" id="status">Analysing... (a sleeping free instance can take up to a minute to wake)</p>
+
+    <section class="result" id="result">
+      <div class="result-head">
+        <span class="result-label" id="resultLabel"></span>
+        <span class="result-score" id="resultScore"></span>
+      </div>
+      <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
+    </section>
+
+    <p class="footer" id="version"></p>
+  </main>
+
+  <script>
+    const input     = document.getElementById("inputText");
+    const button    = document.getElementById("submitBtn");
+    const status    = document.getElementById("status");
+    const resultBox = document.getElementById("result");
+
+    function showResult(kind, label, scoreText, percent) {
+      resultBox.className = `result ${kind}`;
+      document.getElementById("resultLabel").textContent = label;
+      document.getElementById("resultScore").textContent = scoreText;
+      document.getElementById("meterFill").style.width = `${percent}%`;
+      resultBox.style.display = "block";
+    }
+
+    async function predict() {
+      const text = input.value.trim();
+      if (!text) {
+        showResult("error", "Nothing to analyse", "Type a sentence first", 0);
+        return;
+      }
+
+      button.disabled = true;
+      status.style.display = "block";
+
+      try {
+        // Same server that served this page, so a relative URL is enough
+        const response = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!response.ok) throw new Error(`Server replied with HTTP ${response.status}`);
+
+        const data = await response.json();
+        const percent = (data.score * 100).toFixed(1);
+        const kind = data.label === "POSITIVE" ? "positive" : "negative";
+        showResult(kind, data.label, `${percent}% confident`, percent);
+      } catch (err) {
+        const message = err instanceof TypeError
+          ? "Could not reach the server - try again in a minute"
+          : err.message;
+        showResult("error", "Something went wrong", message, 0);
+      } finally {
+        button.disabled = false;
+        status.style.display = "none";
+      }
+    }
+
+    button.addEventListener("click", predict);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.ctrlKey) predict();
+    });
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        input.value = chip.textContent;
+        predict();
+      });
+    });
+
+    // Show which version is deployed (handy when CI/CD rolls out a new one)
+    fetch("/health")
+      .then((r) => r.json())
+      .then((h) => { document.getElementById("version").textContent = `App version: ${h.version}`; })
+      .catch(() => {});
+  </script>
+</body>
+</html>
