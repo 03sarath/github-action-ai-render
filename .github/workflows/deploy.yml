@@ -73,8 +73,25 @@ jobs:
           API=https://api.render.com/v1
           AUTH="Authorization: Bearer $RENDER_API_KEY"
 
+          # Call the Render API; on HTTP >= 400 print Render's own error message
+          # (plain `curl -sf` hides it and just exits 22).
+          # usage: render METHOD PATH [JSON_BODY]
+          render() {
+            local args=(-sS -o resp.json -w '%{http_code}' -X "$1" -H "$AUTH" -H "Accept: application/json")
+            if [ -n "${3:-}" ]; then
+              args+=(-H "Content-Type: application/json" -d "$3")
+            fi
+            local code
+            code=$(curl "${args[@]}" "$API$2") || { echo "::error::Network error calling Render: $1 $2" >&2; return 1; }
+            if [ "$code" -ge 400 ]; then
+              echo "::error::Render API $1 $2 returned HTTP $code: $(cat resp.json)" >&2
+              return 1
+            fi
+            cat resp.json
+          }
+
           # Does a service with this name already exist?
-          EXISTING=$(curl -sf -H "$AUTH" "$API/services?name=$RENDER_SERVICE_NAME&type=web_service&limit=1")
+          EXISTING=$(render GET "/services?name=$RENDER_SERVICE_NAME&type=web_service&limit=1")
           SERVICE_ID=$(echo "$EXISTING" | jq -r '.[0].service.id // empty')
 
           if [ -n "$SERVICE_ID" ]; then
@@ -88,14 +105,17 @@ jobs:
             if [ "$CURRENT_PLAN" != "$RENDER_PLAN" ]; then
               echo "Plan drift: service is on '$CURRENT_PLAN', workflow wants '$RENDER_PLAN'. Updating..."
               PATCH_BODY=$(jq -n --arg plan "$RENDER_PLAN" '{serviceDetails: {plan: $plan}}')
-              curl -sf -X PATCH "$API/services/$SERVICE_ID" -H "$AUTH" -H "Content-Type: application/json" -d "$PATCH_BODY" > /dev/null
+              if ! render PATCH "/services/$SERVICE_ID" "$PATCH_BODY" > /dev/null; then
+                echo "::error::Could not change plan '$CURRENT_PLAN' -> '$RENDER_PLAN'. Moving off 'free' needs a payment method on the Render workspace (Dashboard -> Billing). Add one, or change the instance type once in the dashboard, then re-run."
+                exit 1
+              fi
               echo "Plan updated to '$RENDER_PLAN' (takes effect on the deploy below)."
             else
               echo "Plan is already '$RENDER_PLAN' - nothing to provision."
             fi
           else
             echo "No service found. Creating it..."
-            OWNER_ID=$(curl -sf -H "$AUTH" "$API/owners?limit=1" | jq -r '.[0].owner.id')
+            OWNER_ID=$(render GET "/owners?limit=1" | jq -r '.[0].owner.id')
 
             jq -n \
               --arg name    "$RENDER_SERVICE_NAME" \
@@ -119,7 +139,7 @@ jobs:
                  envVars: [ { key: "PORT", value: $port } ]
                }' > body.json
 
-            CREATED_JSON=$(curl -sf -X POST "$API/services" -H "$AUTH" -H "Content-Type: application/json" -d @body.json)
+            CREATED_JSON=$(render POST "/services" "$(cat body.json)")
             SERVICE_ID=$(echo "$CREATED_JSON" | jq -r '.service.id')
             SERVICE_URL=$(echo "$CREATED_JSON" | jq -r '.service.serviceDetails.url')
             CREATED=true
