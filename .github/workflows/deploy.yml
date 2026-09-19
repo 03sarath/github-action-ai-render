@@ -17,9 +17,11 @@ env:
   IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
   RENDER_SERVICE_NAME: distilbert-sentiment
   RENDER_REGION: oregon
-  # NOTE: free/starter = 512MB RAM -> PyTorch + DistilBERT gets OOM-killed.
-  # standard = 1 CPU / 2GB, the smallest plan the model actually fits in.
-  RENDER_PLAN: standard
+  # free = 512MB RAM, no card needed. Check "Report memory used by the model"
+  # in the smoke test: if it's near/over 512MB the container can be OOM-killed.
+  # Paid plans (starter/standard) need a payment method on the Render workspace.
+  # Free services also sleep after ~15 min idle; first request wakes them (slow).
+  RENDER_PLAN: free
   APP_PORT: "7860"
 
 jobs:
@@ -229,6 +231,7 @@ jobs:
         env:
           SERVICE_URL: ${{ needs.provision.outputs.service_url }}
         run: |
-          curl --fail --retry 5 --retry-delay 15 --retry-connrefused --retry-all-errors "$SERVICE_URL/health"
+          # Free instances can be slow to wake up, so allow ~3 minutes
+          curl --fail --retry 12 --retry-delay 15 --retry-connrefused --retry-all-errors "$SERVICE_URL/health"
           echo ""
           echo "Live at $SERVICE_URL"
