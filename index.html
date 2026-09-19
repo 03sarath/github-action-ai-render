@@ -162,19 +162,19 @@
 <body>
   <div class="card">
     <h1>DistilBERT Sentiment Tester</h1>
-    <p class="subtitle">Test your deployed Hugging Face Space model</p>
+    <p class="subtitle">Test your model deployed on Render</p>
 
     <div class="url-row">
-      <label for="apiUrl">Hugging Face Space URL</label>
+      <label for="apiUrl">Render Service URL</label>
       <p class="hint">
-        Format: &nbsp;<code>https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space</code>
+        Format: &nbsp;<code>https://YOUR_SERVICE_NAME.onrender.com</code>
         &nbsp;— do <strong>not</strong> include <code>/predict</code> here
       </p>
       <input
         type="text"
         id="apiUrl"
-        placeholder="https://03sarath-distilbert-sentiment.hf.space"
-        value=""
+        placeholder="https://distilbert-sentiment.onrender.com"
+        value="https://distilbert-sentiment.onrender.com"
       />
     </div>
 
@@ -186,7 +186,9 @@
 
     <button id="submitBtn" onclick="predict()">Analyse Sentiment</button>
 
-    <div class="spinner" id="spinner">Sending request...</div>
+    <div class="spinner" id="spinner">
+      Sending request... (free Render instances sleep when idle — the first call can take up to a minute)
+    </div>
 
     <div class="result" id="result">
       <div class="result-label" id="resultLabel"></div>
@@ -207,7 +209,7 @@
       resultBox.className = "result";
 
       if (!urlInput) {
-        showError("Please enter your Hugging Face Space URL.");
+        showError("Please enter your Render service URL.");
         return;
       }
       if (!textInput) {
@@ -244,7 +246,11 @@
           (data.model_version ? `&nbsp;&nbsp;|&nbsp;&nbsp;Model version: <span>${data.model_version}</span>` : "");
 
       } catch (err) {
-        showError(err.message || "Request failed. Check the URL and try again.");
+        // fetch() throws a bare TypeError for network/CORS failures
+        const message = err instanceof TypeError
+          ? "Could not reach the API. Check the URL, wait a minute if the service was asleep, and try again."
+          : err.message;
+        showError(message || "Request failed. Check the URL and try again.");
       } finally {
         btn.disabled        = false;
         spinner.style.display = "none";
