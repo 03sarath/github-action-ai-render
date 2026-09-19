@@ -14,7 +14,9 @@ on:
 env:
   DOCKER_REPO: 03sarath/distilbert-sentiment
   # Change this tag and push to main -> that version gets tested and deployed
-  IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+  # 'slim' = ONNX int8 build from github-action-ai/slim-image (fits in free 512MB).
+  # 'latest'/'v1' are the ~3GB PyTorch builds that get OOM-killed on free.
+  IMAGE_TAG: ${{ inputs.image_tag || 'slim' }}
   RENDER_SERVICE_NAME: distilbert-sentiment
   RENDER_REGION: oregon
   # free = 512MB RAM, no card needed. Check "Report memory used by the model"
@@ -208,7 +210,12 @@ jobs:
                 exit 0
                 ;;
               build_failed|update_failed|canceled|pre_deploy_failed)
-                echo "::error::Render deploy finished with status '$STATUS'. Check the service logs in the Render dashboard."
+                echo "::error::Render deploy finished with status '$STATUS'."
+                # Show WHY: Render's service events include e.g. server_failed with
+                # an oomKilled (out of memory) or nonZeroExit reason.
+                echo "Recent Render events for this service (newest first):"
+                curl -s -H "$AUTH" "$API/services/$SERVICE_ID/events?limit=10" \
+                  | jq -c '.[].event | {timestamp, type, details}' || true
                 exit 1
                 ;;
             esac
